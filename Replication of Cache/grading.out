@@ -1,0 +1,250 @@
+
+CS:APP Cache Lab: Grading Sheet for VitaliRobert-csim.c
+
+Part 1: Compiling test framework
+
+gcc -g -Wall -Werror -std=c99 -o csim csim.c cachelab.c -lm 
+gcc -g -Wall -Werror -std=c99 -o csim-ref csim-ref.c cachelab.c -lm
+gcc -g -Wall -Werror -std=c99 -o test-csim test-csim.c 
+
+
+Part 2: Running the driver
+
+test-csim out:
+
+ Invoked for GRADING.
+                        Your simulator     Reference simulator
+Points (s,E,b)    Hits  Misses  Evicts    Hits  Misses  Evicts
+     3 (1,1,1)       9       8       6       9       8       6  traces/yi2.trace
+     3 (4,2,4)       4       5       2       4       5       2  traces/yi.trace
+     3 (2,1,4)       2       3       1       2       3       1  traces/dave.trace
+     3 (2,1,3)     167      71      67     167      71      67  traces/trans.trace
+     3 (3,2,3)     209      29      13     209      29      13  traces/trans.trace
+     6 (5,8,6)  140891    5209    4953  140891    5209    4953  traces/sort.trace
+     6 (1,4,3)   38429  107671  107663   38429  107671  107663  traces/sort.trace
+     6 (6,3,5)  280805    6159    5967  280805    6159    5967  traces/long.trace
+     6 (5,4,4)  266475   20489   20361  266475   20489   20361  traces/long.trace
+     6 (4,2,5)  142850   28653   28621  142850   28653   28621  traces/sort4k.trace
+     6 (3,2,4)  114076   57427   57411  114076   57427   57411  traces/sort4k.trace
+    51
+
+TEST_CSIM_RESULTS=51
+
+
+Final score: 51
+
+
+
+Part 3: Grade
+
+
+Score : 51.0 / 51
+
+Part 4: Handin files for VitaliRobert-csim.c
+
+
+*** csim.c ***
+#include "cachelab.h"
+#include <getopt.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <math.h>
+#include <stdio.h>
+
+//Robert Vitali 457235
+
+//global variables
+int hits = 0;
+int misses = 0;
+int evictions = 0;
+unsigned long counter = 0;
+
+
+//this is the structure that is storing an individual "line" of information (based on slides)
+typedef struct{
+	int validBit;
+	unsigned int tag;
+	unsigned long timestamp;
+} CacheEntry;
+
+//this struct is storing multiple cache entries in one set
+typedef struct{
+	CacheEntry *entry;
+} CacheSet;
+
+//this stores the multiple sets that make up the cache 
+typedef struct{
+	CacheSet *sets;
+} Cache;
+
+//checking a hit
+void checkHit(Cache *localCache, unsigned int tempTag, int E, int s, int b, long addr){
+
+	unsigned long setBits = (addr << (64 - s - b));
+	setBits = setBits >> (64 - s);
+	
+	//checking if there is a hit
+	for(int i = 0; i < E; i++){
+		printf(" TEMP TAG: %d", tempTag);
+		printf(" CHECK TAG: %d", (localCache -> sets[setBits].entry[i].tag));
+		printf(" VALID BIT %d\n", (localCache -> sets[setBits].entry[i].validBit));
+		if((localCache -> sets[setBits].entry[i].tag) == tempTag){
+			if((localCache -> sets[setBits].entry[i].validBit) == 1){
+				hits++;
+				counter++;
+				localCache -> sets[setBits].entry[i].timestamp = counter;
+				printf("HIT!!!\n");
+				return;
+			}
+		}
+	}
+	printf("MISS!!!!\n");
+
+	//checking if there is a open spot
+	for(int j = 0; j < E; j++){
+		if((localCache -> sets[setBits].entry[j].validBit) == 0){
+			misses++;
+			counter++;
+			localCache -> sets[setBits].entry[j].timestamp = counter;
+			localCache -> sets[setBits].entry[j].tag = tempTag;
+			localCache -> sets[setBits].entry[j].validBit = 1;
+			return;
+		}
+	}
+
+	printf("EVICTION!!!\n");
+
+	//no spot? check which to evict
+	unsigned long ts = localCache -> sets[setBits].entry[0].timestamp;
+	int lowestIndex = 0;
+	for(int k = 1; k < E; k++){
+		if((localCache -> sets[setBits].entry[k].timestamp) < ts){
+			ts = localCache -> sets[setBits].entry[k].timestamp;
+			lowestIndex = k;
+		}
+	}
+	counter++;
+	localCache -> sets[setBits].entry[lowestIndex].timestamp = counter;
+	localCache -> sets[setBits].entry[lowestIndex].tag = tempTag;
+	localCache -> sets[setBits].entry[lowestIndex].validBit = 1;
+	misses++;
+	evictions++;
+}
+
+
+// // //checking a miss
+// void checkMiss(Cache *localCache, unsigned int tempTag, int E, int s, int b, long addr){
+// 	unsigned setBits = (addr << (64 - s - b));
+// 	setBits = setBits >> (64 - s);
+
+// 	//checking if there is a open spot
+// 	for(int j = 0; j < E; j++){
+// 		if((localCache -> sets[setBits].entry[j].validBit) == 0){
+// 			misses++;
+// 			counter++;
+// 			localCache -> sets[setBits].entry[j].timestamp = counter;
+// 			localCache -> sets[setBits].entry[j].tag = tempTag;
+// 			localCache -> sets[setBits].entry[j].validBit = 1;
+// 			break;
+// 		}
+// 	}
+// }
+
+// //checking an eviction
+// void checkEviction(Cache *localCache, unsigned int tempTag, int E, int s, int b, long addr){
+// 	unsigned setBits = (addr << (64 - s - b));
+// 	setBits = setBits >> (64 - s);
+
+// 	//no spot? check which to evict
+// 	unsigned long lowestTimestamp = localCache -> sets[setBits].entry[0].timestamp;
+// 	int lowestIndex = 0;
+// 	for(int k = 1; k < E; k++){
+// 		if((localCache -> sets[setBits].entry[k].timestamp) < lowestTimestamp){
+// 			lowestTimestamp = localCache -> sets[setBits].entry[k].timestamp;
+// 			lowestIndex = k;
+// 		}
+// 	}
+// 	counter++;
+// 	localCache -> sets[setBits].entry[lowestIndex].timestamp = counter;
+// 	localCache -> sets[setBits].entry[lowestIndex].tag = tempTag;
+// 	localCache -> sets[setBits].entry[lowestIndex].validBit = 1;
+// 	misses++;
+// 	evictions++;
+// }
+
+
+int main(int argc, char *argv[])
+{
+   int s; //number of set index bits
+   int E; //associativity (number of lines per set)
+   int b; //number of block bits, B = 2^b is the block size
+   FILE *t; //the file being read
+   char op;
+   long addr;
+   int size;
+   long numberOfSets;
+   // long sizeOfBlock;
+   Cache localCache; //local variable to init cache
+   //CacheSet tempSet; //this is used to caputre the specific set we are going to iterate over
+   char var;
+   unsigned int tempTag;
+   while((var = getopt(argc, argv, "s:E:b:t:")) != -1){
+	switch(var){
+		case 's':
+		s = atoi(optarg);
+		break;
+		case 'E':
+		E = atoi(optarg);
+		break;
+		case 'b':
+		b = atoi(optarg);
+		break;
+		case 't':
+		t = fopen(optarg, "r");
+		break;
+	}
+   }
+
+   //printing out varaibles
+   //printf("s: %d, E: %d, b: %d", s, E, b);
+
+   numberOfSets = pow(2.0, s); //number of sets
+   // sizeOfBlock = pow(2.0, b); //size of block
+
+   //allocating space for all of the sets in the cache
+   localCache.sets = (CacheSet *) malloc(numberOfSets * sizeof(CacheSet));
+
+   //allocation of space for each set
+   for(int i = 0; i < numberOfSets; i++){
+   	localCache.sets[i].entry = (CacheEntry *) malloc(E * sizeof(CacheEntry));
+   }  
+
+
+   while(fscanf(t," %c %lx, %d",&op,&addr,&size) == 3){
+	tempTag = addr >> (s + b);
+	//printf("enter while loop to read lines");
+	switch(op){
+		case 'L'://load from memory to cache
+		checkHit(&localCache, tempTag, E, s, b, addr);
+		break;
+
+		case 'M'://load from memory, make changes, then store in memory
+		checkHit(&localCache, tempTag, E, s, b, addr);
+		checkHit(&localCache, tempTag, E, s, b, addr);
+		break;
+
+		case 'S'://store in memory from cache
+		checkHit(&localCache, tempTag, E, s, b, addr);
+		break;
+
+		case 'I':
+		break;
+		}
+	}
+
+   
+    printSummary(hits, misses, evictions);
+    return 0;
+}
+
+
